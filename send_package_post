@@ -1,0 +1,80 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <ArduinoJson.h>
+
+// Substitua pelos dados da sua rede Wi-Fi
+const char* ssid = "UEA_PROENSP";
+const char* password = "proenspwifi";
+
+// Endereço do servidor Node.js
+const char* serverUrl = "http://192.168.17.103:3000/wifi-scan";
+
+void conectaWiFi() {
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
+
+  Serial.println("Conectando ao Wi-Fi...");
+  WiFi.mode(WIFI_STA);  // Garante modo estação
+  WiFi.begin(ssid, password);
+
+  unsigned long inicioTentativa = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - inicioTentativa < 10000) {  // 10s timeout
+    delay(500);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWi-Fi conectado!");
+    Serial.print("Endereço IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\nFalha ao conectar ao Wi-Fi.");
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  conectaWiFi();
+}
+
+void loop() {
+
+  if (WiFi.status() != WL_CONNECTED) {
+    conectaWiFi();
+  }
+
+  DynamicJsonDocument doc(4096);
+  JsonArray redes = doc.createNestedArray("redes");
+
+  JsonObject rede = redes.createNestedObject();
+  rede["status"] = "1";
+
+  String payload;
+  serializeJson(doc, payload);
+
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFiClient client;
+    HTTPClient http;
+    http.begin(client, serverUrl);  // Correto para ESP8266 core 3.x
+    http.addHeader("Content-Type", "application/json");
+
+    int resposta = http.POST(payload);
+
+    if (resposta > 0) {
+      Serial.printf("POST enviado. Código HTTP: %d\n", resposta);
+      String respostaServidor = http.getString();
+      Serial.println("Resposta do servidor: " + respostaServidor);
+    } else {
+      Serial.printf("Erro ao enviar POST: %s\n", http.errorToString(resposta).c_str());
+    }
+
+    http.end();
+  } else {
+    Serial.println("Wi-Fi desconectado, não foi possível enviar os dados.");
+  }
+
+delay(500);  // Pequeno atraso para não ocupar 100% da CPU
+}
